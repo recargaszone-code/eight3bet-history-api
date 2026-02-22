@@ -2,6 +2,7 @@ import time
 import random
 import threading
 import json
+import requests
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -19,7 +20,7 @@ PASSWORD = "0000000000"
 
 # Variáveis globais
 history_lock = threading.Lock()
-current_history = []          # ordem cronológica: índice 0 = mais antigo
+current_history = []          # ordem: índice 0 = mais antigo
 history_file = "historico.json"
 
 def save_history():
@@ -33,11 +34,11 @@ def load_history():
     global current_history
     try:
         with open(history_file, "r") as f:
-            current_history = json.load(f)[-30:]  # carrega só os últimos 30
+            current_history = json.load(f)[-30:]
     except:
         current_history = []
 
-load_history()  # carrega ao iniciar
+load_history()
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -52,14 +53,12 @@ def update_history(new_list):
     with history_lock:
         if not new_list:
             return False
-
         atual_set = set(current_history)
         novos = [x for x in new_list if x not in atual_set]
-
         if novos:
-            current_history.extend(novos)           # adiciona no final (mais recente)
+            current_history.extend(novos)
             if len(current_history) > 30:
-                current_history = current_history[-30:]  # mantém só os últimos 30
+                current_history = current_history[-30:]
             save_history()
             return True
     return False
@@ -80,13 +79,7 @@ def scraper_worker():
             with sync_playwright() as p:
                 browser = p.chromium.launch(
                     headless=True,
-                    channel="chrome",
-                    args=[
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu'
-                    ]
+                    args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
                 )
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 800},
@@ -96,7 +89,6 @@ def scraper_worker():
 
                 page.goto(URL, wait_until="networkidle", timeout=90000)
 
-                # Login
                 page.fill('input#phone', PHONE)
                 time.sleep(random.uniform(0.8, 1.7))
                 page.fill('input[type="password"]', PASSWORD)
@@ -104,41 +96,36 @@ def scraper_worker():
                 page.click('button.login-btn:has-text("Iniciar sessão")', timeout=15000)
                 time.sleep(5)
 
-                # Iframe
                 page.wait_for_selector('iframe#gm-frm', timeout=60000)
                 iframe_locator = page.frame_locator('iframe#gm-frm')
                 iframe_locator.locator(".payouts-block").first.wait_for(state="visible", timeout=45000)
 
-                print("✅ Conectado ao jogo! Monitorando histórico...")
+                print("✅ Conectado ao jogo! Monitorando...")
 
                 ultimo_set = set()
 
                 while True:
                     try:
                         historico_atual = get_payouts(iframe_locator)
-                        if historico_atual:
-                            if update_history(historico_atual):
-                                novos = [x for x in historico_atual if x not in ultimo_set]
-                                if novos:
-                                    msg = f"🔔 <b>NOVO HISTÓRICO</b>\n\nÚltimos: {' | '.join(historico_atual[:8])}"
-                                    send_telegram_message(msg)
-                                    print(f"📨 Telegram enviado → {len(current_history)} itens no histórico")
-                                ultimo_set = set(historico_atual)
+                        if historico_atual and update_history(historico_atual):
+                            novos = [x for x in historico_atual if x not in ultimo_set]
+                            if novos:
+                                msg = f"🔔 <b>NOVO HISTÓRICO</b>\n\nÚltimos: {' | '.join(historico_atual[:8])}"
+                                send_telegram_message(msg)
+                                print(f"📨 Telegram enviado → {len(current_history)} itens")
+                            ultimo_set = set(historico_atual)
 
                         time.sleep(random.uniform(4.2, 6.8))
-
-                    except Exception as e_inner:
-                        print("Erro interno:", e_inner)
+                    except:
                         time.sleep(8)
-
         except Exception as e:
-            print(f"Erro grave no navegador: {e} → reiniciando em 15s")
+            print(f"Erro grave: {e} → reiniciando em 15s")
             time.sleep(15)
 
 # ===================== ENDPOINTS =====================
 @app.get("/")
 def home():
-    return {"status": "online", "message": "888Bets Aviator History API"}
+    return {"status": "online"}
 
 @app.get("/health")
 def health():
@@ -149,14 +136,13 @@ def health():
 def get_history():
     with history_lock:
         return JSONResponse({
-            "history": current_history,   # array com no máximo 30 valores
+            "history": current_history,
             "count": len(current_history),
             "timestamp": time.time()
         })
 
-# ===================== INICIAR THREAD =====================
+# ===================== INICIAR =====================
 if __name__ == "__main__":
-    print("Iniciando thread de monitoramento...")
     thread = threading.Thread(target=scraper_worker, daemon=True)
     thread.start()
 
