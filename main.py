@@ -5,7 +5,7 @@ import json
 import requests
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 app = FastAPI(title="888Bets Aviator History API")
 
@@ -20,7 +20,7 @@ PASSWORD = "0000000000"
 
 # Variáveis globais
 history_lock = threading.Lock()
-current_history = []          # ordem: índice 0 = mais antigo
+current_history = []
 history_file = "historico.json"
 
 def save_history():
@@ -73,7 +73,7 @@ def get_payouts(frame):
         return None
 
 def scraper_worker():
-    print("🚀 Scraper iniciado em background (headless)")
+    print("🚀 Scraper iniciado (headless - Render)")
     while True:
         try:
             with sync_playwright() as p:
@@ -100,7 +100,7 @@ def scraper_worker():
                 iframe_locator = page.frame_locator('iframe#gm-frm')
                 iframe_locator.locator(".payouts-block").first.wait_for(state="visible", timeout=45000)
 
-                print("✅ Conectado ao jogo! Monitorando...")
+                print("✅ Conectado ao jogo! Monitorando histórico...")
 
                 ultimo_set = set()
 
