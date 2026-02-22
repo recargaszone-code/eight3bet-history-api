@@ -19,6 +19,9 @@ CHAT_ID = '7427648935'
 PHONE = "863584494"
 PASSWORD = "0000000000"
 
+# Proxy do Senegal (free, pode morrer rápido – troque se não funcionar)
+PROXY_SERVER = "http://196.1.97.198:80"  # Senegal (SN) - HTTP Elite
+
 # Variáveis globais
 history_lock = threading.Lock()
 current_history = []
@@ -56,7 +59,7 @@ def send_telegram_photo(photo_path, caption):
             files = {"photo": photo}
             data = {"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}
             requests.post(url, data=data, files=files, timeout=30)
-        os.remove(photo_path)  # limpa o arquivo
+        os.remove(photo_path)
     except Exception as e:
         send_telegram_message(f"Erro ao enviar foto: {str(e)}")
 
@@ -97,7 +100,7 @@ def get_payouts(frame, page):
         return None
 
 def scraper_worker():
-    send_telegram_message("🚀 <b>Scraper (v2) iniciado no Render</b> – com screenshots em cada passo/erro")
+    send_telegram_message(f"🚀 Scraper iniciado com proxy Senegal: {PROXY_SERVER}")
 
     while True:
         try:
@@ -108,14 +111,24 @@ def scraper_worker():
                 )
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 800},
-                    user_agent="Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36"
+                    user_agent="Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                    proxy={
+                        "server": PROXY_SERVER,
+                        # Sem username/password (proxy free sem auth)
+                    }
                 )
                 page = context.new_page()
 
-                send_telegram_message("🌐 Acessando página...")
+                send_telegram_message("🌐 Acessando página com proxy Senegal...")
                 page.goto(URL, wait_until="networkidle", timeout=120000)
-                time.sleep(3)  # delay extra após networkidle
-                take_screenshot(page, "Página inicial carregada")
+                time.sleep(3)
+                take_screenshot(page, "Página inicial via proxy SN")
+
+                # Verifica se caiu no bloqueio
+                if "location services" in page.content().lower() or "don't have access" in page.content().lower():
+                    take_screenshot(page, "Bloqueio detectado – proxy SN falhou")
+                    send_telegram_message("❌ Proxy Senegal detectado/bloqueado. Troque o proxy!")
+                    raise Exception("Geo-block detectado")
 
                 send_telegram_message("🔍 Esperando campo de telefone...")
                 try:
@@ -145,7 +158,7 @@ def scraper_worker():
 
                 take_screenshot(page, "Iframe + payouts-block carregados")
 
-                send_telegram_message("🎮 <b>Conectado ao jogo! Iniciando monitoramento...</b>")
+                send_telegram_message("🎮 <b>Conectado ao jogo! Monitorando...</b>")
 
                 ultimo_set = set()
 
@@ -165,7 +178,7 @@ def scraper_worker():
                         take_screenshot(page, f"Erro no loop – {str(inner_e)[:60]}")
                         time.sleep(8)
         except Exception as e:
-            send_telegram_message(f"❌ <b>Erro grave:</b> {str(e)}\nReiniciando em 15s...")
+            send_telegram_message(f"❌ Erro grave: {str(e)}\nReiniciando em 15s...")
             print(f"Erro grave: {e}")
             time.sleep(15)
 
@@ -190,7 +203,7 @@ def get_history():
 
 # ===================== INICIAR =====================
 if __name__ == "__main__":
-    send_telegram_message("🔄 Iniciando thread com debug de screenshots...")
+    send_telegram_message("🔄 Iniciando com proxy Senegal...")
     thread = threading.Thread(target=scraper_worker, daemon=True)
     thread.start()
 
